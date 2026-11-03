@@ -48,10 +48,6 @@ def password(parent, title, confirm=False, allow_empty=False):
     if not allow_empty and not value:
         raise ValueError("Password cannot be empty.")
     if confirm:
-        if len(value) < 12:
-            raise ValueError(
-                "Use a password of at least 12 characters; a longer unique passphrase is recommended."
-            )
         repeated, ok = QInputDialog.getText(
             parent, title, "Confirm password:", QLineEdit.EchoMode.Password
         )
@@ -319,13 +315,24 @@ class Controller(QObject):
             dialog.factors.clear()
             dialog.deleteLater()
 
-    def choose_open(self):
-        if self.busy():
-            return
-        try:
-            self.open(select_file(self.mw, "Open encrypted project", FILTER))
-        except Cancelled:
-            pass
+    def on_drop(self, path):
+        if Path(path).suffix.lower() != ".pmeecp":
+            return False
+        QTimer.singleShot(0, self, lambda: self.open(path))
+        return True
+
+    def open_from_host(self, path):
+        previous_path = self.mw.init_manager.current_file_path
+
+        def deferred():
+            # Host import/CLI wrappers assign the target path after invoking
+            # the opener. Only successful authenticated loading commits it.
+            if self.mw.init_manager.current_file_path == path:
+                self.mw.init_manager.current_file_path = previous_path
+                self.mw.state_manager.update_window_title()
+            self.open(path)
+
+        QTimer.singleShot(0, self, deferred)
 
     def credential(self, record):
         if record["kind"] == "password":
@@ -391,7 +398,7 @@ class Controller(QObject):
 
             self.start(
                 operation,
-                self.restore,
+                lambda data: self.restore(data, path),
                 "Unlocking project… Touch your YubiKey if configured.",
             )
         except Cancelled:
@@ -403,9 +410,7 @@ class Controller(QObject):
                 "Unsupported/damaged file, invalid credential, or unavailable key. The current project has not been changed.",
             )
 
-    def restore(self, data):
-        # The plugin imports as an unsaved document; ordinary Save never writes
-        # plaintext over an encrypted file. Export explicitly to encrypt again.
+    def restore(self, data, path):
         if (
             QMessageBox.question(
                 self.mw,
@@ -421,8 +426,9 @@ class Controller(QObject):
             self.mw.ui_manager.restore_ui_for_editing()
             self.mw.state_manager.load_from_json_data(data)
             self.mw.state_manager.reset_undo_stack()
-            self.mw.init_manager.current_file_path = None
-            self.context.mark_project_modified()
+            self.mw.init_manager.current_file_path = str(Path(path).absolute())
+            self.mw.state_manager.has_unsaved_changes = False
+            self.mw.state_manager.update_window_title()
             self.context.refresh_ui()
             QTimer.singleShot(0, self.context.fit_2d_view)
             self.context.show_status_message(
