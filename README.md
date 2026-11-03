@@ -27,8 +27,18 @@ Third-party libraries are installed separately and are not in the ZIP.
 1. Choose **File → Export → Encrypted Project Pro (.pmeecp)...**.
 2. Add **Password**, enter a nonempty password and confirm it,
    and save. Or add key-based methods from the same dialog.
-3. Open the encrypted file through File Open or
-   **File → Open Encrypted Project Pro...**. Supply the requested credentials.
+3. Open it through the host-generated **File → Import** entry for `.pmeecp`,
+   or drag and drop the file onto MoleditPy. Supply the requested credentials.
+
+The existing file-opener hook also handles command-line opening:
+
+```sh
+moleditpy project.pmeecp
+python -m moleditpy project.pmeecp
+```
+
+Use `python3` instead of `python` where appropriate. The plugin must already be
+installed and enabled; `--safe` skips it.
 
 The policy selector offers:
 
@@ -96,10 +106,12 @@ headers are rejected before key derivation. Successful encryption is written
 atomically using an encrypted temporary file; no plaintext temporary project
 is created. Authentication failure never passes data to the host.
 
-An opened project becomes an **unsaved document**. Ordinary Save does not
-overwrite the `.pmeecp` file. Use the encrypted Export action to save encrypted
-again; ordinary application saves remain ordinary, unencrypted saves. Saving
-an encrypted export does not clear the host's unsaved-document flag.
+An opened project retains the `.pmeecp` filename as its current path and starts
+with the modified flag off. Ordinary
+Save opens the host's Save As dialog and writes `.pmeprj`, rather than overwriting
+the encrypted file. Use the encrypted Export action to save encrypted again;
+ordinary application saves remain ordinary, unencrypted saves. Saving an
+encrypted export does not clear the host's unsaved-document flag.
 
 This plugin protects exported files, not application memory, swap, ordinary
 saves, backups, other plugins or a compromised computer. Python cannot guarantee
@@ -112,7 +124,7 @@ received an independent security audit. See SECURITY.md.
 python -m pip install -e ".[test,yubikey]"
 python -m pytest
 python -m ruff check encrypted_project_pro tests
-python scripts/release_common.py package --version 0.1.2
+python scripts/release_common.py package --version 0.2.0
 ```
 
 Tests cover encryption, Any/All access requirements, wrong keys, authenticated

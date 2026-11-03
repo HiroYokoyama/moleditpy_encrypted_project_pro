@@ -35,6 +35,7 @@ def controller(qtbot):
     context = MagicMock()
     context.get_main_window.return_value = window
     window.state_manager = MagicMock()
+    window.state_manager.has_unsaved_changes = True
     window.ui_manager = MagicMock()
     window.init_manager = SimpleNamespace(current_file_path="previous.pmeprj")
     return gui.Controller(context)
@@ -49,6 +50,11 @@ def test_registration_is_folder_plugin_and_silent(qtbot):
     context.register_file_opener.assert_called_once()
     assert context.register_file_opener.call_args.args[0] == ".pmeecp"
     assert context.add_export_action.call_args.args[0].endswith("(.pmeecp)...")
+    context.register_drop_handler.assert_called_once()
+    assert all(
+        "Open Encrypted" not in call.args[0]
+        for call in context.add_menu_action.call_args_list
+    )
 
 
 def test_save_dialog_policy_remove_and_no_secrets_in_labels(qtbot):
@@ -95,8 +101,9 @@ def test_actual_async_save_and_open_preserves_project(
     controller.open(str(path))
     qtbot.waitUntil(lambda: controller.task is None, timeout=15000)
     controller.mw.state_manager.load_from_json_data.assert_called_once_with(project)
-    assert controller.mw.init_manager.current_file_path is None
-    controller.context.mark_project_modified.assert_called_once()
+    assert controller.mw.init_manager.current_file_path == str(path.absolute())
+    assert controller.mw.state_manager.has_unsaved_changes is False
+    controller.context.mark_project_modified.assert_not_called()
 
 
 def test_authentication_failure_never_loads_or_overwrites(
@@ -116,14 +123,37 @@ def test_authentication_failure_never_loads_or_overwrites(
     controller.mw.state_manager.load_from_json_data.assert_not_called()
     assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
     assert path.read_bytes() == blob
+    assert controller.mw.state_manager.has_unsaved_changes is True
 
 
 def test_declined_document_replace_preserves_state(monkeypatch, controller):
     monkeypatch.setattr(
         gui.QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No
     )
-    controller.restore({"data": "new"})
+    controller.restore({"data": "new"}, "project.pmeecp")
     controller.mw.state_manager.load_from_json_data.assert_not_called()
+    assert controller.mw.state_manager.has_unsaved_changes is True
+    assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
+
+
+@pytest.mark.parametrize("filename", ["project.pmeecp", "project.PMEECP"])
+def test_drop_hook_defers_opening_until_event_returns(
+    qtbot, monkeypatch, controller, filename
+):
+    opener = MagicMock()
+    monkeypatch.setattr(controller, "open", opener)
+    assert controller.on_drop(filename) is True
+    opener.assert_not_called()
+    qtbot.waitUntil(lambda: opener.call_count == 1)
+    opener.assert_called_once_with(filename)
+
+
+def test_drop_hook_leaves_other_extensions_to_host(controller, monkeypatch):
+    opener = MagicMock()
+    monkeypatch.setattr(controller, "open", opener)
+    for filename in ["project.pmeprj", "project.pmeenc", "molecule.xyz"]:
+        assert controller.on_drop(filename) is False
+    opener.assert_not_called()
 
 
 def test_task_failure_does_not_expose_credentials(qtbot):

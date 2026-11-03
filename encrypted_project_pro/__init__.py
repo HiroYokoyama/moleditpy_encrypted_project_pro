@@ -4,7 +4,7 @@ SPDX-License-Identifier: LGPL-3.0-or-later
 """
 
 PLUGIN_NAME = "Encrypted Project Pro"
-PLUGIN_VERSION = "0.1.2"
+PLUGIN_VERSION = "0.2.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_LICENSE = "LGPL-3.0-or-later"
 PLUGIN_DESCRIPTION = "Authenticated .pmeecp project encryption with passwords, key files, PEM keys and YubiKey PIV."
@@ -22,9 +22,7 @@ def initialize(context):
     controller = Controller(context)
     context.add_export_action("Encrypted Project Pro (.pmeecp)...", controller.save)
     context.register_file_opener(".pmeecp", controller.open)
-    context.add_menu_action(
-        "File/Open Encrypted Project Pro...", controller.choose_open
-    )
+    context.register_drop_handler(controller.on_drop)
     context.add_menu_action(
         "File/Generate encryption key file...", controller.generate_key_file
     )
