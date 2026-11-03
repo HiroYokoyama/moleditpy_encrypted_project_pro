@@ -156,6 +156,27 @@ def test_drop_hook_leaves_other_extensions_to_host(controller, monkeypatch):
     opener.assert_not_called()
 
 
+def test_host_wrapper_cancel_preserves_previous_path_and_modified_flag(
+    qtbot, monkeypatch, controller, tmp_path
+):
+    path = tmp_path / "cancelled.pmeecp"
+    path.write_bytes(crypto.encrypt(b"{}", [crypto.KeyFile(b"a" * 32)]))
+
+    def cancel(record):
+        raise gui.Cancelled()
+
+    monkeypatch.setattr(controller, "credential", cancel)
+    controller.open_from_host(str(path))
+    # This is what the host's CLI/import wrapper does when the callback returns.
+    controller.mw.init_manager.current_file_path = str(path)
+    qtbot.waitUntil(
+        lambda: controller.mw.init_manager.current_file_path == "previous.pmeprj"
+    )
+    assert controller.mw.state_manager.has_unsaved_changes is True
+    assert controller.task is None
+    controller.mw.state_manager.load_from_json_data.assert_not_called()
+
+
 def test_task_failure_does_not_expose_credentials(qtbot):
     def fail():
         raise ValueError("secret-password-123")

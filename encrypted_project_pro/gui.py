@@ -321,6 +321,19 @@ class Controller(QObject):
         QTimer.singleShot(0, self, lambda: self.open(path))
         return True
 
+    def open_from_host(self, path):
+        previous_path = self.mw.init_manager.current_file_path
+
+        def deferred():
+            # Host import/CLI wrappers assign the target path after invoking
+            # the opener. Only successful authenticated loading commits it.
+            if self.mw.init_manager.current_file_path == path:
+                self.mw.init_manager.current_file_path = previous_path
+                self.mw.state_manager.update_window_title()
+            self.open(path)
+
+        QTimer.singleShot(0, self, deferred)
+
     def credential(self, record):
         if record["kind"] == "password":
             return crypto.Password(password(self.mw, "Unlock encrypted project"))

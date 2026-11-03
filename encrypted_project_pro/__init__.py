@@ -21,7 +21,7 @@ def initialize(context):
 
     controller = Controller(context)
     context.add_export_action("Encrypted Project Pro (.pmeecp)...", controller.save)
-    context.register_file_opener(".pmeecp", controller.open)
+    context.register_file_opener(".pmeecp", controller.open_from_host)
     context.register_drop_handler(controller.on_drop)
     context.add_menu_action(
         "File/Generate encryption key file...", controller.generate_key_file
