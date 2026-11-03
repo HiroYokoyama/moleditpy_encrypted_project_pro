@@ -23,7 +23,9 @@ CONTEXT = b"MoleditPy Encrypted Project Pro v1"
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
 
 
 def encode(value):
@@ -69,11 +71,15 @@ def create_key_file(path):
 
 
 def oaep():
-    return padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=CONTEXT)
+    return padding.OAEP(
+        mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=CONTEXT
+    )
 
 
 def public_bytes(key):
-    return key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return key.public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
 
 def key_id(key):
@@ -81,7 +87,9 @@ def key_id(key):
 
 
 def derive(secret, salt, aad):
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=CONTEXT + aad).derive(secret)
+    return HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=salt, info=CONTEXT + aad
+    ).derive(secret)
 
 
 class Password:
@@ -97,12 +105,17 @@ class Password:
 
     def wrap(self, secret, aad):
         salt, nonce = os.urandom(16), os.urandom(12)
-        return {"kind": self.kind, "salt": encode(salt), "nonce": encode(nonce),
-                "wrapped": encode(AESGCM(self.key(salt)).encrypt(nonce, secret, aad))}
+        return {
+            "kind": self.kind,
+            "salt": encode(salt),
+            "nonce": encode(nonce),
+            "wrapped": encode(AESGCM(self.key(salt)).encrypt(nonce, secret, aad)),
+        }
 
     def unwrap(self, record, aad):
         return AESGCM(self.key(decode(record["salt"], 16))).decrypt(
-            decode(record["nonce"], 12), decode(record["wrapped"], 48), aad)
+            decode(record["nonce"], 12), decode(record["wrapped"], 48), aad
+        )
 
 
 class KeyFile(Password):
@@ -110,7 +123,9 @@ class KeyFile(Password):
 
     def __init__(self, value):
         if len(value) != 32:
-            raise ValueError("Key files must contain exactly 32 random bytes. Use Generate key file.")
+            raise ValueError(
+                "Key files must contain exactly 32 random bytes. Use Generate key file."
+            )
         self.value = value
 
     def key(self, salt):
@@ -126,14 +141,20 @@ class PublicKey:
             if key.key_size < 2048 or key.key_size > 4096:
                 raise ValueError("RSA keys must have 2048–4096 bits.")
         elif not isinstance(key, x25519.X25519PublicKey) and not (
-            isinstance(key, ec.EllipticCurvePublicKey) and isinstance(key.curve, ec.SECP256R1)
+            isinstance(key, ec.EllipticCurvePublicKey)
+            and isinstance(key.curve, ec.SECP256R1)
         ):
-            raise ValueError("Supported public keys: RSA 2048–4096, X25519, ECDH P-256.")
+            raise ValueError(
+                "Supported public keys: RSA 2048–4096, X25519, ECDH P-256."
+            )
 
     def wrap(self, secret, aad):
         result = {"kind": self.kind, "key_id": key_id(self.public)}
         if isinstance(self.public, rsa.RSAPublicKey):
-            result.update(algorithm="RSA-OAEP-SHA256", wrapped=encode(self.public.encrypt(secret, oaep())))
+            result.update(
+                algorithm="RSA-OAEP-SHA256",
+                wrapped=encode(self.public.encrypt(secret, oaep())),
+            )
             return result
         if isinstance(self.public, x25519.X25519PublicKey):
             ephemeral = x25519.X25519PrivateKey.generate()
@@ -144,9 +165,15 @@ class PublicKey:
             shared = ephemeral.exchange(ec.ECDH(), self.public)
             algorithm = "ECDH-P256-HKDF-SHA256"
         salt, nonce = os.urandom(16), os.urandom(12)
-        result.update(algorithm=algorithm, ephemeral=encode(public_bytes(ephemeral.public_key())),
-                      salt=encode(salt), nonce=encode(nonce),
-                      wrapped=encode(AESGCM(derive(shared, salt, aad)).encrypt(nonce, secret, aad)))
+        result.update(
+            algorithm=algorithm,
+            ephemeral=encode(public_bytes(ephemeral.public_key())),
+            salt=encode(salt),
+            nonce=encode(nonce),
+            wrapped=encode(
+                AESGCM(derive(shared, salt, aad)).encrypt(nonce, secret, aad)
+            ),
+        )
         return result
 
 
@@ -160,17 +187,31 @@ class PrivateKey:
     def unwrap(self, record, aad):
         if record["key_id"] != key_id(self.public):
             raise ValueError("The selected private key does not match this recipient.")
-        if record["algorithm"] == "RSA-OAEP-SHA256" and isinstance(self.private, rsa.RSAPrivateKey):
-            return self.private.decrypt(decode(record["wrapped"], self.private.key_size // 8), oaep())
+        if record["algorithm"] == "RSA-OAEP-SHA256" and isinstance(
+            self.private, rsa.RSAPrivateKey
+        ):
+            return self.private.decrypt(
+                decode(record["wrapped"], self.private.key_size // 8), oaep()
+            )
         ephemeral = serialization.load_der_public_key(decode(record["ephemeral"]))
-        if record["algorithm"] == "X25519-HKDF-SHA256" and isinstance(self.private, x25519.X25519PrivateKey) and isinstance(ephemeral, x25519.X25519PublicKey):
+        if (
+            record["algorithm"] == "X25519-HKDF-SHA256"
+            and isinstance(self.private, x25519.X25519PrivateKey)
+            and isinstance(ephemeral, x25519.X25519PublicKey)
+        ):
             shared = self.private.exchange(ephemeral)
-        elif record["algorithm"] == "ECDH-P256-HKDF-SHA256" and isinstance(self.private, ec.EllipticCurvePrivateKey) and isinstance(ephemeral, ec.EllipticCurvePublicKey) and isinstance(ephemeral.curve, ec.SECP256R1):
+        elif (
+            record["algorithm"] == "ECDH-P256-HKDF-SHA256"
+            and isinstance(self.private, ec.EllipticCurvePrivateKey)
+            and isinstance(ephemeral, ec.EllipticCurvePublicKey)
+            and isinstance(ephemeral.curve, ec.SECP256R1)
+        ):
             shared = self.private.exchange(ec.ECDH(), ephemeral)
         else:
             raise ValueError("Unsupported key agreement.")
         return AESGCM(derive(shared, decode(record["salt"], 16), aad)).decrypt(
-            decode(record["nonce"], 12), decode(record["wrapped"], 48), aad)
+            decode(record["nonce"], 12), decode(record["wrapped"], 48), aad
+        )
 
 
 def _xor(values):
@@ -184,7 +225,9 @@ def _xor(values):
 
 
 def factor_aad(header, index):
-    return CONTEXT + canonical({"id": header["id"], "policy": header["policy"], "index": index})
+    return CONTEXT + canonical(
+        {"id": header["id"], "policy": header["policy"], "index": index}
+    )
 
 
 def encrypt(data, factors, policy="any"):
@@ -199,8 +242,10 @@ def encrypt(data, factors, policy="any"):
         shares.append(_xor([dek, *shares]))
     else:
         shares = [dek] * len(factors)
-    header["factors"] = [factor.wrap(share, factor_aad(header, index))
-                         for index, (factor, share) in enumerate(zip(factors, shares))]
+    header["factors"] = [
+        factor.wrap(share, factor_aad(header, index))
+        for index, (factor, share) in enumerate(zip(factors, shares, strict=True))
+    ]
     encoded = canonical(header)
     if len(encoded) > MAX_HEADER:
         raise ValueError("Too many recipient details.")
@@ -219,23 +264,41 @@ def _object(pairs):
 
 
 def inspect_container(blob):
-    if not isinstance(blob, bytes) or len(blob) > MAX_FILE or not blob.startswith(MAGIC):
+    if (
+        not isinstance(blob, bytes)
+        or len(blob) > MAX_FILE
+        or not blob.startswith(MAGIC)
+    ):
         raise ValueError("Not a supported .pmeecp file.")
     offset = len(MAGIC)
     if len(blob) < offset + 4:
         raise ValueError("Truncated container.")
-    size = struct.unpack(">I", blob[offset:offset + 4])[0]
+    size = struct.unpack(">I", blob[offset : offset + 4])[0]
     end = offset + 4 + size
     if not 1 <= size <= MAX_HEADER or len(blob) < end + 28:
         raise ValueError("Invalid header size or truncated payload.")
-    header = json.loads(blob[offset + 4:end], object_pairs_hook=_object)
-    if not isinstance(header, dict) or set(header) != {"version", "id", "policy", "factors"} or header["version"] != 1 or isinstance(header["version"], bool):
+    header = json.loads(blob[offset + 4 : end], object_pairs_hook=_object)
+    if (
+        not isinstance(header, dict)
+        or set(header) != {"version", "id", "policy", "factors"}
+        or header["version"] != 1
+        or type(header["version"]) is not int
+    ):
         raise ValueError("Unsupported container version.")
     decode(header["id"], 16)
-    if header["policy"] not in {"any", "all"} or not isinstance(header["factors"], list) or not 1 <= len(header["factors"]) <= MAX_FACTORS:
+    if (
+        header["policy"] not in {"any", "all"}
+        or not isinstance(header["factors"], list)
+        or not 1 <= len(header["factors"]) <= MAX_FACTORS
+    ):
         raise ValueError("Invalid unlock policy.")
     for record in header["factors"]:
-        if not isinstance(record, dict) or record.get("kind") not in {"password", "key-file", "public-key", "yubikey"}:
+        if not isinstance(record, dict) or record.get("kind") not in {
+            "password",
+            "key-file",
+            "public-key",
+            "yubikey",
+        }:
             raise ValueError("Unsupported factor.")
         if record["kind"] in {"password", "key-file"}:
             decode(record["salt"], 16)
@@ -244,7 +307,11 @@ def inspect_container(blob):
         else:
             if not isinstance(record.get("key_id"), str) or len(record["key_id"]) != 64:
                 raise ValueError("Invalid public-key identifier.")
-            if record.get("algorithm") not in {"RSA-OAEP-SHA256", "X25519-HKDF-SHA256", "ECDH-P256-HKDF-SHA256"}:
+            if record.get("algorithm") not in {
+                "RSA-OAEP-SHA256",
+                "X25519-HKDF-SHA256",
+                "ECDH-P256-HKDF-SHA256",
+            }:
                 raise ValueError("Unsupported public-key algorithm.")
             decode(record["wrapped"])
     return header, end
@@ -256,7 +323,9 @@ def decrypt(blob, credentials):
     shares = []
     if not isinstance(credentials, dict) or not credentials:
         raise ValueError("No credentials supplied.")
-    if header["policy"] == "all" and set(credentials) != set(range(len(header["factors"]))):
+    if header["policy"] == "all" and set(credentials) != set(
+        range(len(header["factors"]))
+    ):
         raise ValueError("Every factor is required by this file.")
     for index, credential in credentials.items():
         if type(index) is not int or not 0 <= index < len(header["factors"]):
@@ -268,6 +337,10 @@ def decrypt(blob, credentials):
         if len(share) != 32:
             raise ValueError("Invalid key share.")
         if header["policy"] == "any":
-            return AESGCM(share).decrypt(blob[end:end + 12], blob[end + 12:], blob[:end])
+            return AESGCM(share).decrypt(
+                blob[end : end + 12], blob[end + 12 :], blob[:end]
+            )
         shares.append(share)
-    return AESGCM(_xor(shares)).decrypt(blob[end:end + 12], blob[end + 12:], blob[:end])
+    return AESGCM(_xor(shares)).decrypt(
+        blob[end : end + 12], blob[end + 12 :], blob[:end]
+    )
