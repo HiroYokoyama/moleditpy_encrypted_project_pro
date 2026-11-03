@@ -37,6 +37,8 @@ def controller(qtbot):
     window.state_manager = MagicMock()
     window.state_manager.has_unsaved_changes = True
     window.ui_manager = MagicMock()
+    window.edit_actions_manager = MagicMock()
+    window.edit_actions_manager.clear_all.return_value = True
     window.init_manager = SimpleNamespace(current_file_path="previous.pmeprj")
     return gui.Controller(context)
 
@@ -127,24 +129,26 @@ def test_authentication_failure_never_loads_or_overwrites(
 
 
 def test_declined_document_replace_preserves_state(monkeypatch, controller):
-    monkeypatch.setattr(
-        gui.QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No
-    )
+    controller.mw.edit_actions_manager.clear_all.return_value = False
     controller.restore({"data": "new"}, "project.pmeecp")
     controller.mw.state_manager.load_from_json_data.assert_not_called()
-    assert controller.mw.state_manager.has_unsaved_changes is True
     assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
 
 
-def test_restore_without_unsaved_changes_skips_prompt(monkeypatch, controller):
-    controller.mw.state_manager.has_unsaved_changes = False
-    question_mock = MagicMock()
-    monkeypatch.setattr(gui.QMessageBox, "question", question_mock)
+def test_restore_invokes_document_reset_and_loads(controller):
     controller.restore({"data": "new"}, "project.pmeecp")
-    question_mock.assert_not_called()
+    controller.mw.edit_actions_manager.clear_all.assert_called_once()
     controller.mw.state_manager.load_from_json_data.assert_called_once_with({"data": "new"})
     assert controller.mw.state_manager.has_unsaved_changes is False
     assert controller.mw.init_manager.current_file_path.endswith("project.pmeecp")
+
+
+def test_restore_fallback_checks_unsaved_changes_when_no_edit_actions(controller):
+    del controller.mw.edit_actions_manager
+    controller.mw.state_manager.check_unsaved_changes.return_value = False
+    controller.restore({"data": "new"}, "project.pmeecp")
+    controller.mw.state_manager.check_unsaved_changes.assert_called_once()
+    controller.mw.state_manager.load_from_json_data.assert_not_called()
 
 
 @pytest.mark.parametrize("filename", ["project.pmeecp", "project.PMEECP"])

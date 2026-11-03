@@ -411,7 +411,17 @@ class Controller(QObject):
             )
 
     def restore(self, data, path):
-        if getattr(self.mw.state_manager, "has_unsaved_changes", False):
+        if hasattr(self.mw, "edit_actions_manager") and hasattr(
+            self.mw.edit_actions_manager, "clear_all"
+        ):
+            if not self.mw.edit_actions_manager.clear_all():
+                return
+        elif hasattr(self.mw, "state_manager") and hasattr(
+            self.mw.state_manager, "check_unsaved_changes"
+        ):
+            if not self.mw.state_manager.check_unsaved_changes():
+                return
+        elif getattr(self.mw.state_manager, "has_unsaved_changes", False):
             if (
                 QMessageBox.question(
                     self.mw,
