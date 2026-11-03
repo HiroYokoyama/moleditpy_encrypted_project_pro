@@ -4,10 +4,10 @@ SPDX-License-Identifier: LGPL-3.0-or-later
 """
 
 PLUGIN_NAME = "Encrypted Project Pro"
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_LICENSE = "LGPL-3.0-or-later"
-PLUGIN_DESCRIPTION = "Authenticated project encryption with passwords, key files, PEM keys and YubiKey PIV."
+PLUGIN_DESCRIPTION = "Authenticated .pmeecp project encryption with passwords, key files, PEM keys and YubiKey PIV."
 PLUGIN_CATEGORY = "File"
 PLUGIN_TAGS = ["File", "Utility"]
 PLUGIN_DEPENDENCIES = ["cryptography>=46,<52"]

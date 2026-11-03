@@ -112,7 +112,7 @@ received an independent security audit. See SECURITY.md.
 python -m pip install -e ".[test,yubikey]"
 python -m pytest
 python -m ruff check encrypted_project_pro tests
-python scripts/release_common.py package --version 0.1.0
+python scripts/release_common.py package --version 0.1.1
 ```
 
 Tests cover encryption, Any/All access requirements, wrong keys, authenticated
