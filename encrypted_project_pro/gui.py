@@ -48,10 +48,6 @@ def password(parent, title, confirm=False, allow_empty=False):
     if not allow_empty and not value:
         raise ValueError("Password cannot be empty.")
     if confirm:
-        if len(value) < 12:
-            raise ValueError(
-                "Use a password of at least 12 characters; a longer unique passphrase is recommended."
-            )
         repeated, ok = QInputDialog.getText(
             parent, title, "Confirm password:", QLineEdit.EchoMode.Password
         )

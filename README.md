@@ -25,7 +25,7 @@ Third-party libraries are installed separately and are not in the ZIP.
 ## Save and open
 
 1. Choose **File → Export → Encrypted Project Pro (.pmeecp)...**.
-2. Add **Password**, confirm a unique passphrase of at least 12 characters,
+2. Add **Password**, enter a nonempty password and confirm it,
    and save. Or add key-based methods from the same dialog.
 3. Open the encrypted file through File Open or
    **File → Open Encrypted Project Pro...**. Supply the requested credentials.
@@ -112,7 +112,7 @@ received an independent security audit. See SECURITY.md.
 python -m pip install -e ".[test,yubikey]"
 python -m pytest
 python -m ruff check encrypted_project_pro tests
-python scripts/release_common.py package --version 0.1.1
+python scripts/release_common.py package --version 0.1.2
 ```
 
 Tests cover encryption, Any/All access requirements, wrong keys, authenticated

@@ -8,6 +8,26 @@ import pytest
 from encrypted_project_pro import crypto, gui, initialize
 
 
+@pytest.mark.parametrize("value", ["x", "short"])
+def test_short_password_can_be_confirmed_and_round_trips(monkeypatch, value):
+    answers = iter([(value, True), (value, True)])
+    monkeypatch.setattr(gui.QInputDialog, "getText", lambda *args: next(answers))
+    entered = gui.password(None, "Encryption password", confirm=True)
+    assert entered == value
+    blob = crypto.encrypt(b"project", [crypto.Password(entered)])
+    assert crypto.decrypt(blob, {0: crypto.Password(value)}) == b"project"
+
+
+def test_empty_password_and_confirmation_mismatch_still_rejected(monkeypatch):
+    monkeypatch.setattr(gui.QInputDialog, "getText", lambda *args: ("", True))
+    with pytest.raises(ValueError, match="cannot be empty"):
+        gui.password(None, "Encryption password", confirm=True)
+    answers = iter([("x", True), ("y", True)])
+    monkeypatch.setattr(gui.QInputDialog, "getText", lambda *args: next(answers))
+    with pytest.raises(ValueError, match="do not match"):
+        gui.password(None, "Encryption password", confirm=True)
+
+
 @pytest.fixture
 def controller(qtbot):
     window = QWidget()
