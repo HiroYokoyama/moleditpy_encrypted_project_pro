@@ -1,0 +1,9 @@
+{
+  "source": "encrypted_project_pro/__init__.py",
+  "title": "Encrypted Project Pro",
+  "package": "encrypted_project_pro",
+  "archive": "encrypted_project_pro_{version}.zip",
+  "assets": ["encrypted_project_pro_{version}.zip"],
+  "include": ["README.md", "LICENSE", "COPYING", "LICENSING.md", "SECURITY.md"],
+  "exclude": ["*/__pycache__/*", "*/.git/*"]
+}

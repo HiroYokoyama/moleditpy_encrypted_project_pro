@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.0 — without leading v)'
+        required: true
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Verify version matches plugin source
+        run: python scripts/release_common.py verify --version "$VERSION"
+
+      - name: Create and push tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Build release package
+        run: python scripts/release_common.py package --version "$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release_common.py publish --version "$VERSION"
+
+      # Auto-registration only works if a REGISTRY_PAT secret exists on this
+      # repository, which only the registry maintainer can issue. Without it the
+      # step is a no-op and the next one tells you the manual route instead.
+      - name: Trigger the plugin registry update
+        id: dispatch
+        continue-on-error: true
+        env:
+          REGISTRY_PAT: ${{ secrets.REGISTRY_PAT }}
+        run: python scripts/release_common.py notify --version "$VERSION"
+
+      - name: How to get into the plugin registry
+        if: steps.dispatch.outputs.registered != 'true'
+        run: |
+          echo "Release published, but it was NOT registered automatically:"
+          echo "no REGISTRY_PAT secret is set on this repository."
+          echo
+          echo "Open a 'Request Plugin Registration / Update' issue with the release URL:"
+          echo "  https://github.com/HiroYokoyama/moleditpy-plugins/issues/new/choose"
+          echo "  asset: encrypted_project_pro_$VERSION.zip"
