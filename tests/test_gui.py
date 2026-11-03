@@ -136,6 +136,17 @@ def test_declined_document_replace_preserves_state(monkeypatch, controller):
     assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
 
 
+def test_restore_without_unsaved_changes_skips_prompt(monkeypatch, controller):
+    controller.mw.state_manager.has_unsaved_changes = False
+    question_mock = MagicMock()
+    monkeypatch.setattr(gui.QMessageBox, "question", question_mock)
+    controller.restore({"data": "new"}, "project.pmeecp")
+    question_mock.assert_not_called()
+    controller.mw.state_manager.load_from_json_data.assert_called_once_with({"data": "new"})
+    assert controller.mw.state_manager.has_unsaved_changes is False
+    assert controller.mw.init_manager.current_file_path.endswith("project.pmeecp")
+
+
 @pytest.mark.parametrize("filename", ["project.pmeecp", "project.PMEECP"])
 def test_drop_hook_defers_opening_until_event_returns(
     qtbot, monkeypatch, controller, filename

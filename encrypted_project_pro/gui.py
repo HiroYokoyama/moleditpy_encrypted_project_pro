@@ -411,17 +411,18 @@ class Controller(QObject):
             )
 
     def restore(self, data, path):
-        if (
-            QMessageBox.question(
-                self.mw,
-                "Open decrypted project?",
-                "Replace the current document? Unsaved changes will be lost.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            != QMessageBox.StandardButton.Yes
-        ):
-            return
+        if getattr(self.mw.state_manager, "has_unsaved_changes", False):
+            if (
+                QMessageBox.question(
+                    self.mw,
+                    "Open decrypted project?",
+                    "Replace the current document? Unsaved changes will be lost.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                != QMessageBox.StandardButton.Yes
+            ):
+                return
         try:
             self.mw.ui_manager.restore_ui_for_editing()
             self.mw.state_manager.load_from_json_data(data)
