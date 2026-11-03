@@ -138,8 +138,8 @@ class PublicKey:
     def __init__(self, key):
         self.public = key
         if isinstance(key, rsa.RSAPublicKey):
-            if key.key_size < 2048 or key.key_size > 4096:
-                raise ValueError("RSA keys must have 2048–4096 bits.")
+            if key.key_size not in {2048, 3072, 4096}:
+                raise ValueError("RSA keys must have 2048, 3072 or 4096 bits.")
         elif not isinstance(key, x25519.X25519PublicKey) and not (
             isinstance(key, ec.EllipticCurvePublicKey)
             and isinstance(key.curve, ec.SECP256R1)
@@ -275,7 +275,10 @@ def inspect_container(blob):
         raise ValueError("Truncated container.")
     size = struct.unpack(">I", blob[offset : offset + 4])[0]
     end = offset + 4 + size
-    if not 1 <= size <= MAX_HEADER or len(blob) < end + 28:
+    if (
+        not 1 <= size <= MAX_HEADER
+        or not end + 28 <= len(blob) <= end + 28 + MAX_PLAINTEXT
+    ):
         raise ValueError("Invalid header size or truncated payload.")
     header = json.loads(blob[offset + 4 : end], object_pairs_hook=_object)
     if (
@@ -307,13 +310,41 @@ def inspect_container(blob):
         else:
             if not isinstance(record.get("key_id"), str) or len(record["key_id"]) != 64:
                 raise ValueError("Invalid public-key identifier.")
+            try:
+                bytes.fromhex(record["key_id"])
+            except ValueError as error:
+                raise ValueError("Invalid public-key identifier.") from error
             if record.get("algorithm") not in {
                 "RSA-OAEP-SHA256",
                 "X25519-HKDF-SHA256",
                 "ECDH-P256-HKDF-SHA256",
             }:
                 raise ValueError("Unsupported public-key algorithm.")
-            decode(record["wrapped"])
+            if record["algorithm"] == "RSA-OAEP-SHA256":
+                if len(decode(record["wrapped"])) not in {256, 384, 512}:
+                    raise ValueError("Invalid RSA ciphertext size.")
+            else:
+                decode(record["salt"], 16)
+                decode(record["nonce"], 12)
+                decode(record["wrapped"], 48)
+                peer = serialization.load_der_public_key(decode(record["ephemeral"]))
+                if record["algorithm"] == "X25519-HKDF-SHA256":
+                    if not isinstance(peer, x25519.X25519PublicKey):
+                        raise ValueError("Invalid X25519 peer.")
+                elif not isinstance(peer, ec.EllipticCurvePublicKey) or not isinstance(
+                    peer.curve, ec.SECP256R1
+                ):
+                    raise ValueError("Invalid P-256 peer.")
+            if record["kind"] == "yubikey":
+                slot = record.get("slot")
+                if (
+                    type(record.get("serial")) is not int
+                    or record["serial"] <= 0
+                    or type(slot) is not int
+                    or (slot != 0x9D and not 0x82 <= slot <= 0x95)
+                    or record["algorithm"] == "X25519-HKDF-SHA256"
+                ):
+                    raise ValueError("Invalid PIV routing metadata.")
     return header, end
 
 

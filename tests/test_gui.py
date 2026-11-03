@@ -1,0 +1,139 @@
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
+import pytest
+
+from encrypted_project_pro import crypto, gui, initialize
+
+
+@pytest.fixture
+def controller(qtbot):
+    window = QWidget()
+    qtbot.addWidget(window)
+    context = MagicMock()
+    context.get_main_window.return_value = window
+    window.state_manager = MagicMock()
+    window.ui_manager = MagicMock()
+    window.init_manager = SimpleNamespace(current_file_path="previous.pmeprj")
+    return gui.Controller(context)
+
+
+def test_registration_is_folder_plugin_and_silent(qtbot):
+    context = MagicMock()
+    window = QWidget()
+    qtbot.addWidget(window)
+    context.get_main_window.return_value = window
+    initialize(context)
+    context.register_file_opener.assert_called_once()
+    assert context.register_file_opener.call_args.args[0] == ".pmeecp"
+    assert context.add_export_action.call_args.args[0].endswith("(.pmeecp)...")
+
+
+def test_save_dialog_policy_remove_and_no_secrets_in_labels(qtbot):
+    dialog = gui.SaveDialog()
+    qtbot.addWidget(dialog)
+    assert dialog.policy.currentData() == "any"
+    dialog.policy.setCurrentIndex(1)
+    assert dialog.policy.currentData() == "all"
+    assert "unrecoverable" in dialog.explanation.text()
+    dialog.factors.append(crypto.Password("a secret passphrase"))
+    dialog.entries.addItem("Password")
+    dialog.entries.setCurrentRow(0)
+    dialog.remove()
+    assert not dialog.factors and dialog.entries.count() == 0
+
+
+def test_actual_async_save_and_open_preserves_project(
+    qtbot, monkeypatch, tmp_path, controller
+):
+    project = {
+        "2d_structure": {"atoms": [{"id": 1, "symbol": "C"}]},
+        "plugins": {"Some Plugin": {"value": 42}},
+    }
+    controller.mw.state_manager.create_json_data.return_value = project
+    path = tmp_path / "molecule.pmeecp"
+    factor = crypto.KeyFile(b"a" * 32)
+    dialog = MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.factors = [factor]
+    dialog.policy.currentData.return_value = "any"
+    monkeypatch.setattr(gui, "SaveDialog", lambda parent: dialog)
+    monkeypatch.setattr(
+        gui.QFileDialog, "getSaveFileName", lambda *args: (str(path), "")
+    )
+    controller.save()
+    qtbot.waitUntil(lambda: controller.task is None, timeout=15000)
+    assert crypto.decrypt(path.read_bytes(), {0: factor}) == crypto.canonical(project)
+    assert list(tmp_path.iterdir()) == [path]
+    assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
+    monkeypatch.setattr(controller, "credential", lambda record: factor)
+    monkeypatch.setattr(
+        gui.QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes
+    )
+    controller.open(str(path))
+    qtbot.waitUntil(lambda: controller.task is None, timeout=15000)
+    controller.mw.state_manager.load_from_json_data.assert_called_once_with(project)
+    assert controller.mw.init_manager.current_file_path is None
+    controller.context.mark_project_modified.assert_called_once()
+
+
+def test_authentication_failure_never_loads_or_overwrites(
+    qtbot, monkeypatch, tmp_path, controller
+):
+    path = tmp_path / "project.pmeecp"
+    blob = crypto.encrypt(b'{"private":true}', [crypto.KeyFile(b"a" * 32)])
+    path.write_bytes(blob)
+    monkeypatch.setattr(
+        controller, "credential", lambda record: crypto.KeyFile(b"b" * 32)
+    )
+    warnings = []
+    monkeypatch.setattr(gui.QMessageBox, "warning", lambda *args: warnings.append(args))
+    controller.open(str(path))
+    qtbot.waitUntil(lambda: controller.task is None, timeout=15000)
+    assert warnings
+    controller.mw.state_manager.load_from_json_data.assert_not_called()
+    assert controller.mw.init_manager.current_file_path == "previous.pmeprj"
+    assert path.read_bytes() == blob
+
+
+def test_declined_document_replace_preserves_state(monkeypatch, controller):
+    monkeypatch.setattr(
+        gui.QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No
+    )
+    controller.restore({"data": "new"})
+    controller.mw.state_manager.load_from_json_data.assert_not_called()
+
+
+def test_task_failure_does_not_expose_credentials(qtbot):
+    def fail():
+        raise ValueError("secret-password-123")
+
+    task = gui.Task(fail)
+    with qtbot.waitSignal(task.failed) as result:
+        task.start()
+    task.wait()
+    assert "secret-password-123" not in result.args[0]
+    assert task.operation is None
+
+
+def test_load_public_and_passphrase_private_roundtrip(tmp_path):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import x25519
+
+    key = x25519.X25519PrivateKey.generate()
+    path = Path(tmp_path) / "public.pem"
+    path.write_bytes(
+        key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+    )
+    assert crypto.key_id(gui.load_public(path)) == crypto.key_id(key.public_key())
+    private_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.BestAvailableEncryption(b"long passphrase"),
+    )
+    loaded = serialization.load_pem_private_key(private_pem, b"long passphrase")
+    assert crypto.key_id(loaded.public_key()) == crypto.key_id(key.public_key())
